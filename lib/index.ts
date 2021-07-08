@@ -1,11 +1,13 @@
-import { GetConfigFunc } from "./types";
+import { GetConfigFunc, Config } from "./types";
 import { fallback } from "./fallback";
 import { local } from "./local";
 import { ssm } from "./ssm";
 import { cache } from "./cache";
+import { ValidatorFunc, validation } from "./validation";
 
 // Re-export types so that they can be used in consuming packages
 export { GetConfigFunc, Config, NO_CONFIG } from "./types";
+export { ValidatorFunc, Validator } from "./validation";
 
 /**
  * Used to retrieve config from either a local file or parameter store.
@@ -24,8 +26,9 @@ export const getConfig: GetConfigFunc = fallback(local(), ssm());
  * @param client The client to use to retrieve values from SSM.
  * @return a function that can be called with a namespace value to retrieve config.
  */
-export const withAWSClient = (client: AWS.SSM): GetConfigFunc =>
-  fallback(local(), ssm(client));
+export function withAWSClient(client: AWS.SSM): GetConfigFunc {
+  return fallback(local(), ssm(client));
+}
 
 /**
  * Wraps a config getter function with an in-memory cache that prevents refetching
@@ -35,18 +38,24 @@ export const withAWSClient = (client: AWS.SSM): GetConfigFunc =>
  * @param fn The config getter function to wrap with the cache, uses the `getConfig` function by default
  * @return a function that can be called with a namespace value to retrieve config.
  */
-export const withCache = (fn = getConfig): GetConfigFunc => cache(fn);
+export function withCache(): GetConfigFunc;
+export function withCache<T>(fn: GetConfigFunc<T>): GetConfigFunc<T>;
+export function withCache<T>(
+  fn: GetConfigFunc<T | Config> = getConfig
+): GetConfigFunc<T> {
+  return cache(fn as GetConfigFunc<T>);
+}
 
-// TODO: We'll probably want schema validation at some point
-// but do we want to bundle it in this library? Or somewhere else?
-// export const validateSchema = (
-//   _schema: unknown,
-//   configFunc: GetConfigFunc = getConfig
-// ): GetConfigFunc => {
-//   return async (_namespace: string): Promise<Config> => {
-//     // Get config
-//     // Validate the result
-//     // Return the config
-//     throw new Error("Not implemented");
-//   };
-// };
+/**
+ * Gets config and validates the result to ensure it conforms to a given spec.
+ * Optionally accepts a config func so that a custom AWS client can be used.
+ *
+ * @param v The validation function that will be used to detect an invalid config.
+ * @param configFunc The function that will be called to fetch the config.
+ */
+export function withValidation<T>(
+  v: ValidatorFunc<T>,
+  configFunc: GetConfigFunc = getConfig
+): GetConfigFunc<T> {
+  return validation(v, configFunc);
+}
